@@ -1,0 +1,70 @@
+{
+  "name": "chokidar-bundle",
+  "private": true,
+  "scripts": {
+    "lint": "eslint --report-unused-disable-directives --ignore-path .gitignore ."
+  },
+  "eslintConfig": {
+    "extends": "eslint:recommended",
+    "parserOptions": {
+      "ecmaVersion": 9,
+      "sourceType": "script"
+    },
+    "env": {
+      "node": true,
+      "es6": true
+    },
+    "rules": {
+      "array-callback-return": "error",
+      "indent": [
+        "error",
+        4
+      ],
+      "no-empty": [
+        "error",
+        {
+          "allowEmptyCatch": true
+        }
+      ],
+      "object-shorthand": "error",
+      "prefer-arrow-callback": [
+        "error",
+        {
+          "allowNamedFunctions": true
+        }
+      ],
+      "prefer-const": [
+        "error",
+        {
+          "ignoreReadBeforeAssign": true
+        }
+      ],
+      "prefer-destructuring": [
+        "error",
+        {
+          "object": true,
+          "array": false
+        }
+      ],
+      "prefer-spread": "error",
+      "prefer-template": "error",
+      "radix": "error",
+      "strict": "error",
+      "quotes": [
+        "error",
+        "single"
+      ],
+      "no-var": "error"
+    }
+  },
+  "dependencies": {
+    "chokidar": "^3.5.1",
+    "chokidar-cli": "^2.1.0",
+    "lodash.throttle": "^4.1.1",
+    "lodash.debounce": "^4.0.8",
+    "yargs": "^13.3.0"
+  },
+  "devDependencies": {
+    "eslint": "^7.22.0"
+  }
+}
