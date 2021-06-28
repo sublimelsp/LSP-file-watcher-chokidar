@@ -1,8 +1,7 @@
 from LSP.plugin import FileWatcher
 from LSP.plugin import FileWatcherProtocol
+from LSP.plugin import FileWatcherKind
 from LSP.plugin import register_file_watcher_implementation
-from LSP.plugin import WatchKind
-from LSP.plugin import WatchKindValue
 from LSP.plugin.core.typing import List, Optional
 from lsp_utils import NodeRuntime
 from os import path
@@ -16,12 +15,12 @@ import weakref
 CHOKIDAR_DIR = path.join(path.dirname(path.realpath(__file__)), 'chokidar')
 CHOKIDAR_CLI_PATH = path.join(CHOKIDAR_DIR, 'chokidar-cli', 'index.js')
 STORAGE_PATH = path.abspath(path.join(sublime.cache_path(), "..", "Package Storage"))
-CHOKIDAR_EVENT_TO_WATCH_KIND = {
-    'add': WatchKindValue.CREATE,
-    'change': WatchKindValue.CHANGE,
-    'unlink': WatchKindValue.DELETE,
-    'addDir': 0,
-    'unlinkDir': 0
+
+
+CHOKIDAR_EVENT_TYPE_TO_WATCH_KIND = {
+    'add': 'create',
+    'change': 'change',
+    'unlink': 'delete',
 }
 
 
@@ -36,7 +35,7 @@ class FileWatcherChokidar(FileWatcher):
         cls,
         root_path: str,
         glob: str,
-        kind: WatchKind,
+        kind: List[FileWatcherKind],
         ignores: List[str],
         handler: FileWatcherProtocol
     ) -> 'FileWatcher':
@@ -51,7 +50,7 @@ class FileWatcherChokidar(FileWatcher):
         self,
         root_path: str,
         glob: str,
-        kind: WatchKind,
+        kind: List[FileWatcherKind],
         ignores: List[str],
         handler: FileWatcherProtocol,
         node_runtime: NodeRuntime
@@ -105,8 +104,8 @@ class FileWatcherChokidar(FileWatcher):
             log('Invalid watcher output: {}'.format(line))
             return
         event_type, cwd_relative_path = line.split(':', 1)
-        event_kind = CHOKIDAR_EVENT_TO_WATCH_KIND[event_type]
-        if event_kind & self._kind:
+        event_kind = CHOKIDAR_EVENT_TYPE_TO_WATCH_KIND.get(event_type)
+        if event_kind in self._kind:
             handler.on_file_event([(event_kind, path.join(self._root_path, cwd_relative_path))])
 
 
