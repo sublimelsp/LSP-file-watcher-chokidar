@@ -1,6 +1,6 @@
 from LSP.plugin import FileWatcher
 from LSP.plugin import FileWatcherProtocol
-from LSP.plugin import FileWatcherKind
+from LSP.plugin import FileWatcherEvent
 from LSP.plugin import register_file_watcher_implementation
 from LSP.plugin.core.typing import List, Optional
 from lsp_utils import NodeRuntime
@@ -35,7 +35,7 @@ class FileWatcherChokidar(FileWatcher):
         cls,
         root_path: str,
         pattern: str,
-        events: List[FileWatcherKind],
+        events: List[FileWatcherEvent],
         ignores: List[str],
         handler: FileWatcherProtocol
     ) -> 'FileWatcher':
@@ -50,7 +50,7 @@ class FileWatcherChokidar(FileWatcher):
         self,
         root_path: str,
         pattern: str,
-        events: List[FileWatcherKind],
+        events: List[FileWatcherEvent],
         ignores: List[str],
         handler: FileWatcherProtocol,
         node_runtime: NodeRuntime
