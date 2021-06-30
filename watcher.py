@@ -34,30 +34,30 @@ class FileWatcherChokidar(FileWatcher):
     def create(
         cls,
         root_path: str,
-        glob: str,
-        kind: List[FileWatcherKind],
+        pattern: str,
+        events: List[FileWatcherKind],
         ignores: List[str],
         handler: FileWatcherProtocol
     ) -> 'FileWatcher':
         node_runtime = NodeRuntime.get(__package__, STORAGE_PATH, (12, 0, 0))
         if not node_runtime:
             raise Exception('{}: Failed to locate the Node.js Runtime'.format(__package__))
-        watcher = FileWatcherChokidar(root_path, glob, kind, ignores, handler, node_runtime)
+        watcher = FileWatcherChokidar(root_path, pattern, events, ignores, handler, node_runtime)
         watcher.start()
         return watcher
 
     def __init__(
         self,
         root_path: str,
-        glob: str,
-        kind: List[FileWatcherKind],
+        pattern: str,
+        events: List[FileWatcherKind],
         ignores: List[str],
         handler: FileWatcherProtocol,
         node_runtime: NodeRuntime
     ) -> None:
         self._root_path = root_path
-        self._glob = glob
-        self._kind = kind
+        self._pattern = pattern
+        self._events = events
         self._ignores = ignores
         self._handler = weakref.ref(handler)
         self._node_runtime = node_runtime
@@ -77,11 +77,11 @@ class FileWatcherChokidar(FileWatcher):
         if not path.isdir(path.join(CHOKIDAR_DIR, 'node_modules')):
             with ActivityIndicator(sublime.active_window(), 'Installing file watcher'):
                 self._node_runtime.npm_install(CHOKIDAR_DIR)
-        log('Starting watcher for directory "{}". Pattern: {}'.format(self._root_path, self._glob))
+        log('Starting watcher for directory "{}". Pattern: {}'.format(self._root_path, self._pattern))
         node_bin = self._node_runtime.node_bin()
         if not node_bin:
             raise Exception('Node binary not resolved')
-        command = [node_bin, CHOKIDAR_CLI_PATH, self._glob]
+        command = [node_bin, CHOKIDAR_CLI_PATH, self._pattern]
         for ignore in self._ignores:
             command.extend(['--ignore', ignore])
         log('Command: {}'.format(' '.join(command)))
@@ -105,7 +105,7 @@ class FileWatcherChokidar(FileWatcher):
             return
         event_type, cwd_relative_path = line.split(':', 1)
         event_kind = CHOKIDAR_EVENT_TYPE_TO_WATCH_KIND.get(event_type)
-        if event_kind in self._kind:
+        if event_kind in self._events:
             handler.on_file_event_async([(event_kind, path.join(self._root_path, cwd_relative_path))])
 
 
