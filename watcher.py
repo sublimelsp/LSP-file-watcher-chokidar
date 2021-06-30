@@ -106,7 +106,7 @@ class FileWatcherChokidar(FileWatcher):
         event_type, cwd_relative_path = line.split(':', 1)
         event_kind = CHOKIDAR_EVENT_TYPE_TO_WATCH_KIND.get(event_type)
         if event_kind in self._kind:
-            handler.on_file_event([(event_kind, path.join(self._root_path, cwd_relative_path))])
+            handler.on_file_event_async([(event_kind, path.join(self._root_path, cwd_relative_path))])
 
 
 register_file_watcher_implementation(FileWatcherChokidar)
