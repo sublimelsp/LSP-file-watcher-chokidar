@@ -117,7 +117,7 @@ class FileWatcherChokidar(TransportCallbacks):
         if not self._transport:
             log('ERROR: Transport does not exist')
             return
-        self._transport.send(self._to_json({'unregister': str(controller_id)}))
+        self._transport.send(self._to_json({'unregister': controller_id}))
         if not len(self._handlers) and self._transport:
             self._end_process()
 

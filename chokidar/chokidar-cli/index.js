@@ -21,7 +21,7 @@ const chokidar = require('chokidar');
  *   polling: boolean
  *   pollInterval: number
  *   pollIntervalBinary: number
- *   uid: string
+ *   uid: number
  * }} RegisterWatcherOptions
  *
  * @typedef {{
@@ -52,7 +52,7 @@ const defaultOpts = {
     pollIntervalBinary: 300,
 };
 
-/** @type {Map<string, chokidar.FSWatcher>} */
+/** @type {Map<number, chokidar.FSWatcher>} */
 const watchers = new Map();
 /** @type {import('readline').ReadLine | null} */
 let rl = null;
