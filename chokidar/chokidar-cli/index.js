@@ -1,185 +1,156 @@
 #!/usr/bin/env node
 
-'use strict';
-
-const throttle = require('lodash.throttle');
+const { resolve } = require('path');
+const readline = require('readline');
 const debounce = require('lodash.debounce');
 const chokidar = require('chokidar');
-const yargs = require('yargs');
-const { version: chokidarVersion } = require('chokidar/package.json');
-const utils = require('./utils');
 
-const EVENT_DESCRIPTIONS = {
-    add: 'File added',
-    addDir: 'Directory added',
-    unlink: 'File removed',
-    unlinkDir: 'Directory removed',
-    change: 'File changed'
+/**
+ * @typedef {'add' | 'addDir' | 'change' | 'unlink' | 'unlinkDir'} ChokidarEventType
+ * @typedef {'create' | 'change' | 'delete'} LspEventType
+ *
+ * @typedef {{
+ *   cwd: string
+ *   debounceChanges: number
+ *   debug: boolean
+ *   events: LspEventType[]
+ *   followSymlinks: boolean
+ *   ignores: string[] | null
+ *   initial: boolean
+ *   patterns: string[]
+ *   polling: boolean
+ *   pollInterval: number
+ *   pollIntervalBinary: number
+ *   uid: string
+ * }} RegisterWatcherOptions
+ *
+ * @typedef {{
+ *   register?: RegisterWatcherOptions
+ *   unregister?: RegisterWatcherOptions['uid']
+ * }} InputCommand
+ */
+
+/** @type {Record<ChokidarEventType, LspEventType | null>} */
+const CHOKIDAR_EVENT_TYPE_TO_LSP = {
+    add: 'create',
+    addDir: null,
+    change: 'change',
+    unlink: 'delete',
+    unlinkDir: null,
 };
 
+/** @type {Partial<RegisterWatcherOptions>} */
 const defaultOpts = {
-    debounce: 400,
     debounceChanges: 400,
-    throttle: 0,
+    debug: false,
+    events: [],
     followSymlinks: false,
-    ignore: null,
+    ignores: null,
+    initial: false,
     polling: false,
     pollInterval: 100,
     pollIntervalBinary: 300,
-    verbose: false,
-    silent: false,
-    initial: false,
-    command: null
 };
 
-const VERSION = `chokidar-cli\nchokidar: ${chokidarVersion}`;
-
-const {argv} = yargs
-    .usage(
-        'Usage: chokidar <pattern> [<pattern>...] [options]\n\n' +
-        '<pattern>:\n' +
-        'Glob pattern to specify files to be watched.\n' +
-        'Multiple patterns can be watched by separating patterns with spaces.\n' +
-        'To prevent shell globbing, write pattern inside quotes.\n' +
-        'Guide to globs: https://github.com/isaacs/node-glob#glob-primer\n'
-    )
-    .example('chokidar "**/*.js" -c "npm run build-js"', 'build when any .js file changes')
-    .example('chokidar "**/*.js" "**/*.less"', 'output changes of .js and .less files')
-    .demand(1)
-    .option('c', {
-        alias: 'command',
-        describe: 'Command to run after each change. ' +
-                  'Needs to be surrounded with quotes when command contains ' +
-                  'spaces. Instances of `{path}` or `{event}` within the ' +
-                  'command will be replaced by the corresponding values from ' +
-                  'the chokidar event.'
-    })
-    .option('d', {
-        alias: 'debounce',
-        default: defaultOpts.debounce,
-        describe: 'Debounce timeout in ms for executing command',
-        type: 'number'
-    })
-    .option('t', {
-        alias: 'throttle',
-        default: defaultOpts.throttle,
-        describe: 'Throttle timeout in ms for executing command',
-        type: 'number'
-    })
-    .option('d', {
-        alias: 'debounce-changes',
-        default: defaultOpts.debounceChanges,
-        describe: 'Debounce timeout in ms for reporting the changes',
-        type: 'number'
-    })
-    .option('s', {
-        alias: 'follow-symlinks',
-        default: defaultOpts.followSymlinks,
-        describe: 'When not set, only the symlinks themselves will be watched ' +
-                  'for changes instead of following the link references and ' +
-                  'bubbling events through the links path',
-        type: 'boolean'
-    })
-    .option('i', {
-        alias: 'ignore',
-        describe: 'Pattern for files which should be ignored. ' +
-                  'Needs to be surrounded with quotes to prevent shell globbing. ' +
-                  'The whole relative or absolute path is tested, not just filename. ' +
-                  'Supports glob patters or regexes using format: /yourmatch/i'
-    })
-    .option('initial', {
-        describe: 'When set, command is initially run once',
-        default: defaultOpts.initial,
-        type: 'boolean'
-    })
-    .option('p', {
-        alias: 'polling',
-        describe: 'Whether to use fs.watchFile(backed by polling) instead of ' +
-                  'fs.watch. This might lead to high CPU utilization. ' +
-                  'It is typically necessary to set this to true to ' +
-                  'successfully watch files over a network, and it may be ' +
-                  'necessary to successfully watch files in other ' +
-                  'non-standard situations',
-        default: defaultOpts.polling,
-        type: 'boolean'
-    })
-    .option('poll-interval', {
-        describe: 'Interval of file system polling. Effective when --polling ' +
-                  'is set',
-        default: defaultOpts.pollInterval,
-        type: 'number'
-    })
-    .option('poll-interval-binary', {
-        describe: 'Interval of file system polling for binary files. ' +
-                  'Effective when --polling is set',
-        default: defaultOpts.pollIntervalBinary,
-        type: 'number'
-    })
-    .option('verbose', {
-        describe: 'When set, output is more verbose and human readable.',
-        default: defaultOpts.verbose,
-        type: 'boolean'
-    })
-    .option('silent', {
-        describe: 'When set, internal messages of chokidar-cli won\'t be written.',
-        default: defaultOpts.silent,
-        type: 'boolean'
-    })
-    .help('h')
-    .alias('h', 'help')
-    .alias('v', 'version')
-    .version(VERSION);
+/** @type {Map<string, chokidar.FSWatcher>} */
+const watchers = new Map();
+/** @type {import('readline').ReadLine | null} */
+let rl = null;
 
 function main() {
-    const userOpts = getUserOpts(argv);
-    const opts = Object.assign(defaultOpts, userOpts);
-    startWatching(opts);
+    rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout,
+    });
+
+    rl.on('line', handleInput);
 }
 
-function getUserOpts(argv) {
-    argv.patterns = argv._;
-    return argv;
+/** @param {string} line */
+function handleInput(line) {
+    if (!line) {
+        if (rl) {
+            console.error('Closing readline interface due to empty input.');
+            rl.close();
+            rl = null;
+        }
+        return;
+    }
+
+    /** @type {InputCommand} */
+    let data;
+
+    try {
+        data = JSON.parse(line);
+    } catch (error) {
+        console.error(`Failed parsing input: "${line}"`);
+        return;
+    }
+
+    if (!data.register && !data.unregister) {
+        console.error('Input data must contain either "register" or "unregister" property.');
+        return;
+    }
+
+    if (data.unregister) {
+        const watcher = watchers.get(data.unregister);
+        if (watcher) {
+            watcher.close();
+            watchers.delete(data.unregister);
+        } else {
+            console.error(`Unregistering watcher with ID "${data.unregister}" failed. No watcher registered.`);
+        }
+    }
+
+    if (data.register) {
+        const userOpts = data.register;
+        const opts = Object.assign({}, defaultOpts, userOpts);
+        if (!opts.uid || !opts.cwd) {
+            console.error('Failed registering watcher. Missing "uid" or "cwd".');
+            return;
+        }
+        registerWatcher(opts);
+    }
 }
 
-
-// Estimates spent working hours based on commit dates
-function startWatching(opts) {
+/** @param {RegisterWatcherOptions} opts */
+function registerWatcher(opts) {
     const chokidarOpts = createChokidarOpts(opts);
     const watcher = chokidar.watch(opts.patterns, chokidarOpts);
+    if (watchers.has(opts.uid)) {
+        console.error(`Failed registering watcher. Watcher with ID "${opts.uid}" already exists.`);
+        return;
+    }
+    watchers.set(opts.uid, watcher);
 
-    const throttledRun = throttle(run, opts.throttle);
-    const debouncedRun = debounce(throttledRun, opts.debounce);
-    const debouncedChangesRun = debounce(reportDebouncedChanges, opts.debounceChanges)
-    let debouncedChangesQueue = []
+    const debouncedChangesRun = debounce(reportDebouncedChanges, opts.debounceChanges);
+    /** @type {string[]} */
+    let debouncedChangesQueue = [];
 
     function reportDebouncedChanges() {
         if (debouncedChangesQueue.length) {
-            console.log(debouncedChangesQueue.join('\n'))
-            debouncedChangesQueue = []
+            console.log(debouncedChangesQueue.join('\n'));
+            debouncedChangesQueue = [];
         }
     }
 
     watcher.on('all', (event, path) => {
-        const description = `${EVENT_DESCRIPTIONS[event]}:`;
+        const lspEvent = CHOKIDAR_EVENT_TYPE_TO_LSP[event];
 
-        if (opts.verbose) {
-            console.error(description, path);
-        } else if (!opts.silent) {
-            if (opts.debounceChanges > 0) {
-                debouncedChangesQueue.push(`${event}:${path}`);
-                debouncedChangesRun()
-            } else {
-                console.log(`${event}:${path}`);
+        if (!lspEvent) {
+            if (opts.debug) {
+                console.error(`Unsupported event type "${event}".`);
             }
+            return;
         }
 
-        // XXX: commands might be still run concurrently
-        if (opts.command) {
-            debouncedRun(
-                opts.command
-                    .replace(/\{path\}/ig, path)
-                    .replace(/\{event\}/ig, event)
-            );
+        const eventString = `${opts.uid}:${lspEvent}:${path}`;
+
+        if (opts.debounceChanges > 0) {
+            debouncedChangesQueue.push(eventString);
+            debouncedChangesRun();
+        } else {
+            console.log(eventString);
         }
     });
 
@@ -189,66 +160,40 @@ function startWatching(opts) {
     });
 
     watcher.once('ready', () => {
-        const list = opts.patterns.join('", "');
-        if (!opts.silent) {
+        const list = opts.patterns.map(pattern => resolve(pattern)).join('", "');
+        if (opts.debug) {
             console.error('Watching', `"${list}" ..`);
         }
     });
 }
 
+/**
+ * @param {RegisterWatcherOptions} opts
+ * @return {chokidar.WatchOptions}
+ */
 function createChokidarOpts(opts) {
-    // Transform e.g. regex ignores to real regex objects
-    opts.ignore = _resolveIgnoreOpt(opts.ignore);
-
+    /** @type {chokidar.WatchOptions} */
     const chokidarOpts = {
+        cwd: opts.cwd,
         followSymlinks: opts.followSymlinks,
         usePolling: opts.polling,
         interval: opts.pollInterval,
         binaryInterval: opts.pollIntervalBinary,
-        ignoreInitial: !opts.initial
+        ignoreInitial: !opts.initial,
     };
 
-    if (opts.ignore) {
-        chokidarOpts.ignored = opts.ignore;
+    if (opts.ignores) {
+        chokidarOpts.ignored = opts.ignores;
     }
 
     return chokidarOpts;
-}
-
-// Takes string or array of strings
-function _resolveIgnoreOpt(ignoreOpt) {
-    if (!ignoreOpt) {
-        return ignoreOpt;
-    }
-
-    const ignores = Array.isArray(ignoreOpt) ? ignoreOpt : [ignoreOpt];
-
-    return ignores.map(ignore => {
-        const isRegex = ignore[0] === '/' && ignore[ignore.length - 1] === '/';
-        if (isRegex) {
-            // Convert user input to regex object
-            const match = ignore.match(/^\/(.*)\/(.*?)$/);
-            return new RegExp(match[1], match[2]);
-        }
-
-        return ignore;
-    });
-}
-
-function run(cmd) {
-    return utils.run(cmd)
-        .catch(error => {
-            console.error('Error when executing', cmd);
-            console.error(error.stack);
-        });
 }
 
 main();
 
 // Set up a parent-process watchdog.
 // Based on https://github.com/microsoft/vscode-languageserver-node/blob/54b686f0a1817a845f34bda19d5b1651c445f2cf/server/src/node/main.ts#L78-L93
-
-const parentProcessPid = process.ppid
+const parentProcessPid = process.ppid;
 if (Number.isInteger(parentProcessPid)) {
     // Set up a timer to periodically check if the parent is still alive.
     setInterval(() => {
@@ -256,6 +201,9 @@ if (Number.isInteger(parentProcessPid)) {
             process.kill(parentProcessPid, 0);
         } catch (ex) {
             // Parent process doesn't exist anymore. Exit the server.
+            if (rl) {
+                rl.close();
+            }
             process.exit(1);
         }
     }, 3000);
