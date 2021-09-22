@@ -99,7 +99,7 @@ class FileWatcherChokidar(TransportCallbacks):
         if not self._transport:
             log('ERROR: Failed creating transport')
             return
-        log('Starting watcher for directory "{}". Pattern: {}. Ignores: {}'.format(root_path, pattern, ignores))
+        # log('Starting watcher for directory "{}". Pattern: {}. Ignores: {}'.format(root_path, pattern, ignores))
         register_data = {
             'register': {
                 'cwd': root_path,
@@ -112,7 +112,7 @@ class FileWatcherChokidar(TransportCallbacks):
         self._transport.send(self._to_json(register_data))
 
     def _on_watcher_removed(self, controller_id: int) -> None:
-        log('Removing watcher with id "{}"'.format(controller_id))
+        # log('Removing watcher with id "{}"'.format(controller_id))
         self._handlers.pop(str(controller_id))
         if not self._transport:
             log('ERROR: Transport does not exist')
@@ -131,7 +131,7 @@ class FileWatcherChokidar(TransportCallbacks):
         )
 
     def _start_process(self) -> None:
-        log('Starting watcher process')
+        # log('Starting watcher process')
         node_runtime = self._resolve_node_runtime()
         if not path.isdir(path.join(CHOKIDAR_DIR, 'node_modules')):
             with ActivityIndicator(sublime.active_window(), 'Installing file watcher'):
