@@ -1,6 +1,8 @@
+from hashlib import md5
+from json import dumps
 from LSP.plugin import FileWatcher
-from LSP.plugin import FileWatcherProtocol
 from LSP.plugin import FileWatcherEventType
+from LSP.plugin import FileWatcherProtocol
 from LSP.plugin import register_file_watcher_implementation
 from LSP.plugin.core.transports import AbstractProcessor
 from LSP.plugin.core.transports import ProcessTransport
@@ -9,21 +11,54 @@ from LSP.plugin.core.transports import Transport
 from LSP.plugin.core.transports import TransportCallbacks
 from LSP.plugin.core.typing import Any, Callable, cast, Dict, IO, List, Optional, Tuple
 from lsp_utils import NodeRuntime
-from json import dumps
+from os import makedirs
 from os import path
+from os import remove
+from shutil import rmtree
 from sublime_lib import ActivityIndicator
+from sublime_lib import ResourcePath
 import sublime
 import subprocess
 import weakref
 
 
-CHOKIDAR_DIR = path.join(path.dirname(path.realpath(__file__)), 'chokidar')
-CHOKIDAR_CLI_PATH = path.join(CHOKIDAR_DIR, 'chokidar-cli', 'index.js')
-STORAGE_PATH = path.abspath(path.join(sublime.cache_path(), "..", "Package Storage"))
+PACKAGE_STORAGE = path.abspath(path.join(sublime.cache_path(), "..", "Package Storage"))
+VIRTUAL_CHOKIDAR_PATH = 'Packages/{}/{}/'.format(__package__, 'chokidar')
+CHOKIDAR_PACKAGE_STORAGE = path.join(PACKAGE_STORAGE, __package__)
+CHOKIDAR_INSTALATION_MARKER = path.join(CHOKIDAR_PACKAGE_STORAGE, '.installing')
+CHOKIDAR_CLI_PATH = path.join(CHOKIDAR_PACKAGE_STORAGE, 'chokidar', 'chokidar-cli', 'index.js')
 
 
 def log(message: str) -> None:
     print('{}: {}'.format(__package__, message))
+
+
+class TemporaryInstallationMarker:
+    """
+    Creates a temporary file for the duration of the context.
+    The temporary file is not removed if an exception triggeres within the context.
+
+    Usage:
+
+    ```
+    with TemporaryInstallationMarker('/foo/file'):
+        ...
+    ```
+    """
+
+    def __init__(self, marker_path: str) -> None:
+        self._marker_path = marker_path
+
+    def __enter__(self) -> 'TemporaryInstallationMarker':
+        makedirs(path.dirname(self._marker_path), exist_ok=True)
+        open(self._marker_path, 'a').close()
+        return self
+
+    def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> None:
+        if exc_type:
+            # Don't remove the marker on exception.
+            return
+        remove(self._marker_path)
 
 
 class StringTransportHandler(AbstractProcessor[str]):
@@ -133,12 +168,10 @@ class FileWatcherChokidar(TransportCallbacks):
     def _start_process(self) -> None:
         # log('Starting watcher process')
         node_runtime = self._resolve_node_runtime()
-        if not path.isdir(path.join(CHOKIDAR_DIR, 'node_modules')):
-            with ActivityIndicator(sublime.active_window(), 'Installing file watcher'):
-                node_runtime.npm_install(CHOKIDAR_DIR)
         node_bin = node_runtime.node_bin()
         if not node_bin:
             raise Exception('Node binary not resolved')
+        self._initialize_storage(node_runtime)
         command = [node_bin, CHOKIDAR_CLI_PATH]
         process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if not process.stdin or not process.stdout:
@@ -149,10 +182,33 @@ class FileWatcherChokidar(TransportCallbacks):
     def _resolve_node_runtime(self) -> NodeRuntime:
         if self._node_runtime:
             return self._node_runtime
-        self._node_runtime = NodeRuntime.get(__package__, STORAGE_PATH, (12, 0, 0))
+        self._node_runtime = NodeRuntime.get(__package__, PACKAGE_STORAGE, (12, 0, 0))
         if not self._node_runtime:
             raise Exception('{}: Failed to locate the Node.js Runtime'.format(__package__))
         return self._node_runtime
+
+    def _initialize_storage(self, node_runtime: NodeRuntime) -> None:
+        destination_dir = path.join(CHOKIDAR_PACKAGE_STORAGE, 'chokidar')
+        installed = False
+        if path.isdir(path.join(destination_dir, 'node_modules')):
+            # Dependencies already installed. Check if the version has changed or last installation did not complete.
+            try:
+                src_hash = md5(ResourcePath(VIRTUAL_CHOKIDAR_PATH, 'package.json').read_bytes()).hexdigest()
+                with open(path.join(destination_dir, 'package.json'), 'rb') as file:
+                    dst_hash = md5(file.read()).hexdigest()
+                if src_hash == dst_hash and not path.isfile(CHOKIDAR_INSTALATION_MARKER):
+                    installed = True
+            except FileNotFoundError:
+                # Needs to be re-installed.
+                pass
+
+        if not installed:
+            with TemporaryInstallationMarker(CHOKIDAR_INSTALATION_MARKER):
+                if path.isdir(destination_dir):
+                    rmtree(destination_dir)
+                ResourcePath(VIRTUAL_CHOKIDAR_PATH).copytree(destination_dir, exist_ok=True)
+                with ActivityIndicator(sublime.active_window(), 'Installing file watcher'):
+                    node_runtime.npm_install(destination_dir)
 
     def _end_process(self, exception: Optional[Exception] = None) -> None:
         if self._transport:
