@@ -13,11 +13,11 @@ Having this package installed alongside the LSP enables support for an additiona
 
 `file_watcher` object properties:
 
-| Name    | Optional | Description |
-|:--------|:---------|:------------|
-| pattern | No       | The `glob` pattern defining which files within the workspace should be watched. The pattern is relative to the workspace root. Example: `{**/*.js,**/*.ts,**/*.json}`. See also [supported patterns](https://microsoft.github.io/language-server-protocol/specifications/specification-3-17/#fileSystemWatcher). |
-| events  | Yes      | An array with the type of events to watch. Default: `["create", "change", "delete"]` (all supported types). |
-| ignores | Yes      | An array of `glob` exclude patterns. By default this includes patterns from Sublime Text's `folder_exclude_patterns` and `file_exclude_patterns` settings and additionally the `'**/node_modules/**'` pattern. When overriding this option the defaults are not included anymore. |
+| Name     | Optional | Descriptionc |
+|:---------|:---------|:-------------|
+| patterns | No       | An array of `glob` patterns defining which files within the workspace should be watched. The patterns are relative to the workspace root. Example: `["{**/*.js,**/*.ts,**/*.json}"]`. See also [supported pattern syntax](https://microsoft.github.io/language-server-protocol/specifications/specification-3-17/#fileSystemWatcher). |
+| events   | Yes      | An array with the type of events to watch. Default: `["create", "change", "delete"]` (all supported types). |
+| ignores  | Yes      | An array of `glob` exclude patterns. By default this includes patterns from Sublime Text's `folder_exclude_patterns` and `file_exclude_patterns` settings and additionally the `'**/node_modules/**'` pattern. When overriding this option the defaults are not included anymore. |
 
 ## Implementation
 

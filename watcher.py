@@ -85,12 +85,12 @@ class FileWatcherController(FileWatcher):
     def create(
         cls,
         root_path: str,
-        pattern: str,
+        patterns: List[str],
         events: List[FileWatcherEventType],
         ignores: List[str],
         handler: FileWatcherProtocol
     ) -> 'FileWatcher':
-        return file_watcher.register_watcher(root_path, pattern, events, ignores, handler)
+        return file_watcher.register_watcher(root_path, patterns, events, ignores, handler)
 
     def __init__(self, on_destroy: Callable[[], None]) -> None:
         self._on_destroy = on_destroy
@@ -110,7 +110,7 @@ class FileWatcherChokidar(TransportCallbacks):
     def register_watcher(
         self,
         root_path: str,
-        pattern: str,
+        patterns: List[str],
         events: List[FileWatcherEventType],
         ignores: List[str],
         handler: FileWatcherProtocol
@@ -118,13 +118,13 @@ class FileWatcherChokidar(TransportCallbacks):
         self._last_controller_id += 1
         controller_id = self._last_controller_id
         controller = FileWatcherController(on_destroy=lambda: self._on_watcher_removed(controller_id))
-        self._on_watcher_added(root_path, pattern, events, ignores, handler)
+        self._on_watcher_added(root_path, patterns, events, ignores, handler)
         return controller
 
     def _on_watcher_added(
         self,
         root_path: str,
-        pattern: str,
+        patterns: List[str],
         events: List[FileWatcherEventType],
         ignores: List[str],
         handler: FileWatcherProtocol
@@ -135,13 +135,13 @@ class FileWatcherChokidar(TransportCallbacks):
         if not self._transport:
             log('ERROR: Failed creating transport')
             return
-        # log('Starting watcher for directory "{}". Pattern: {}. Ignores: {}'.format(root_path, pattern, ignores))
+        # log('Starting watcher for directory "{}". Pattern: {}. Ignores: {}'.format(root_path, patterns, ignores))
         register_data = {
             'register': {
                 'cwd': root_path,
                 'events': events,
                 'ignores': ignores,
-                'patterns': [pattern],
+                'patterns': patterns,
                 'uid': self._last_controller_id,
             }
         }
