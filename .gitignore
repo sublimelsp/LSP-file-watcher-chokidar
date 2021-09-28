@@ -1,0 +1,8 @@
+*.pyc
+.DS_Store
+.mypy_cache
+.pytest_cache
+.ropeproject
+.tox
+htmlcov
+mypycov

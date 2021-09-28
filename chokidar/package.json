@@ -1,0 +1,19 @@
+{
+  "name": "chokidar-bundle",
+  "private": true,
+  "scripts": {
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "chokidar": "^3.5.1",
+    "lodash.debounce": "^4.0.8",
+    "lodash.throttle": "^4.1.1"
+  },
+  "devDependencies": {
+    "@types/lodash.debounce": "^4.0.6",
+    "@types/lodash.throttle": "^4.1.6",
+    "@types/node": "^16.9.1",
+    "eslint": "^7.22.0",
+    "typescript": "^4.4.3"
+  }
+}

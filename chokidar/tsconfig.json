@@ -1,0 +1,19 @@
+{
+    "compilerOptions": {
+        "baseUrl": ".",
+        "target": "esnext",
+        "module": "esnext",
+        "esModuleInterop": true,
+        "moduleResolution": "node",
+        "noEmit": true,
+        "allowJs": true,
+        "checkJs": true,
+        "allowSyntheticDefaultImports": true,
+        "strict": true,
+        "resolveJsonModule": true,
+        "lib": [
+            "dom",
+            "esnext",
+        ],
+    },
+}
