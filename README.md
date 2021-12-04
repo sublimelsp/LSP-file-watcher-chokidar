@@ -9,7 +9,11 @@ A non-native file watcher implementation for [LSP](https://packagecontrol.io/pac
 
 ## Usage
 
-Having this package installed alongside the LSP enables support for an additional `file_watcher` object on the [Client configuration](https://lsp.sublimetext.io/guides/client_configuration/) object.
+Having this package installed alongside LSP enables the `workspace.didChangeWatchedFiles` capability and support for the `workspace/didChangeWatchedFiles` notification. The servers can also then allowed to dynamically register file watchers.
+
+For `LSP-*` packages that are within the `sublimelsp` organization it should be enough to just install this package and file watching should work without any extra configuration.
+
+In other cases it might "just work" (if the server registers watchers dynamically) or it might require manual configuration using the the `file_watcher` object on the [Client configuration](https://lsp.sublimetext.io/guides/client_configuration/) object.
 
 `file_watcher` object properties:
 
