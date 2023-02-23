@@ -15,7 +15,6 @@ from os import makedirs
 from os import path
 from os import remove
 from shutil import rmtree
-from shutil import which
 from sublime_lib import ActivityIndicator
 from sublime_lib import ResourcePath
 import sublime
@@ -173,11 +172,9 @@ class FileWatcherChokidar(TransportCallbacks):
         if not node_bin:
             raise Exception('Node binary not resolved')
         self._initialize_storage(node_runtime)
-        command = [node_bin, CHOKIDAR_CLI_PATH]
-        startup_info = _create_startup_info(command)
-        process = subprocess.Popen(
-            command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, startupinfo=startup_info)
-        if not process.stdin or not process.stdout:
+        process = node_runtime.run_node(
+            [CHOKIDAR_CLI_PATH], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if not process or not process.stdin or not process.stdout:
             raise RuntimeError('Failed initializing watcher process')
         self._transport = ProcessTransport(
             'lspwatcher', process, None, process.stdout, process.stdin, process.stderr, StringTransportHandler(), self)
@@ -241,27 +238,6 @@ class FileWatcherChokidar(TransportCallbacks):
         self._end_process(exception)
 
 
-def _create_startup_info(args: List[str]) -> Any:
-    startupinfo = None
-    if sublime.platform() == "windows":
-        startupinfo = subprocess.STARTUPINFO()  # type: ignore
-        startupinfo.dwFlags |= subprocess.SW_HIDE | subprocess.STARTF_USESHOWWINDOW  # type: ignore
-        executable_arg = args[0]
-        _, ext = path.splitext(executable_arg)
-        if len(ext) < 1:
-            path_to_executable = which(executable_arg)
-            # what extensions should we append so CreateProcess can find it?
-            # node has .cmd
-            # dart has .bat
-            # python has .exe wrappers - not needed
-            for extension in ['.cmd', '.bat']:
-                if path_to_executable and path_to_executable.lower().endswith(extension):
-                    args[0] = executable_arg + extension
-                    break
-    return startupinfo
-
-
 file_watcher = FileWatcherChokidar()
-
 
 register_file_watcher_implementation(FileWatcherController)
