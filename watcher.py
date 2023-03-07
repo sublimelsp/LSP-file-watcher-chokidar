@@ -208,7 +208,7 @@ class FileWatcherChokidar(TransportCallbacks):
                     rmtree(destination_dir)
                 ResourcePath(VIRTUAL_CHOKIDAR_PATH).copytree(destination_dir, exist_ok=True)
                 with ActivityIndicator(sublime.active_window(), 'Installing file watcher'):
-                    node_runtime.npm_install(destination_dir)
+                    node_runtime.run_install(destination_dir)
 
     def _end_process(self, exception: Optional[Exception] = None) -> None:
         if self._transport:
