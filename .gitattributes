@@ -1,0 +1,4 @@
+.github/ export-ignore
+.gitignore export-ignore
+pyrightconfig.json export-ignore
+tox.ini export-ignore

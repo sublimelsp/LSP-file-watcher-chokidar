@@ -1,6 +1,7 @@
 from hashlib import md5
 from json import dumps
 from LSP.plugin import FileWatcher
+from LSP.plugin import FileWatcherEvent
 from LSP.plugin import FileWatcherEventType
 from LSP.plugin import FileWatcherProtocol
 from LSP.plugin import register_file_watcher_implementation
@@ -27,6 +28,8 @@ VIRTUAL_CHOKIDAR_PATH = 'Packages/{}/{}/'.format(__package__, 'chokidar')
 CHOKIDAR_PACKAGE_STORAGE = path.join(PACKAGE_STORAGE, __package__)
 CHOKIDAR_INSTALATION_MARKER = path.join(CHOKIDAR_PACKAGE_STORAGE, '.installing')
 CHOKIDAR_CLI_PATH = path.join(CHOKIDAR_PACKAGE_STORAGE, 'chokidar', 'chokidar-cli', 'index.js')
+
+Uid = str
 
 
 def log(message: str) -> None:
@@ -105,6 +108,7 @@ class FileWatcherChokidar(TransportCallbacks):
         self._handlers = {}  # type: Dict[str, Tuple[weakref.ref[FileWatcherProtocol], str]]
         self._node_runtime = None  # type: Optional[NodeRuntime]
         self._transport = None  # type: Optional[Transport[str]]
+        self._pending_events = {}  # type: Dict[Uid, List[FileWatcherEvent]]
 
     def register_watcher(
         self,
@@ -117,18 +121,19 @@ class FileWatcherChokidar(TransportCallbacks):
         self._last_controller_id += 1
         controller_id = self._last_controller_id
         controller = FileWatcherController(on_destroy=lambda: self._on_watcher_removed(controller_id))
-        self._on_watcher_added(root_path, patterns, events, ignores, handler)
+        self._on_watcher_added(controller_id, root_path, patterns, events, ignores, handler)
         return controller
 
     def _on_watcher_added(
         self,
+        controller_id: int,
         root_path: str,
         patterns: List[str],
         events: List[FileWatcherEventType],
         ignores: List[str],
         handler: FileWatcherProtocol
     ) -> None:
-        self._handlers[str(self._last_controller_id)] = (weakref.ref(handler), root_path)
+        self._handlers[str(controller_id)] = (weakref.ref(handler), root_path)
         if len(self._handlers) and not self._transport:
             self._start_process()
         if not self._transport:
@@ -141,7 +146,7 @@ class FileWatcherChokidar(TransportCallbacks):
                 'events': events,
                 'ignores': ignores,
                 'patterns': patterns,
-                'uid': self._last_controller_id,
+                'uid': controller_id,
             }
         }
         self._transport.send(self._to_json(register_data))
@@ -219,17 +224,30 @@ class FileWatcherChokidar(TransportCallbacks):
     # --- TransportCallbacks -------------------------------------------------------------------------------------------
 
     def on_payload(self, payload: str) -> None:
+        # Chokidar debounces the events and sends them in batches but Transport notifies us for each new line
+        # separately so we don't get the benefit of batching by default. To optimize the `on_file_event_async`
+        # notifications we'll batch the events on our side and only notify when chokidar reports end of the batch
+        # using the `<flush>` line.
+        if payload == '<flush>':
+            for uid, events in self._pending_events.items():
+                handler, root_path = self._handlers[uid]
+                handler_impl = handler()
+                if not handler_impl:
+                    log('ERROR: on_payload(): Handler already deleted')
+                    continue
+                handler_impl.on_file_event_async(events)
+            self._pending_events.clear()
+            return
         if ':' not in payload:
             log('Invalid watcher output: {}'.format(payload))
             return
+        # Queue event.
         uid, event_type, cwd_relative_path = payload.split(':', 2)
-        handler, root_path = self._handlers[uid]
-        handler_impl = handler()
-        if not handler_impl:
-            log('ERROR: on_payload(): Handler already deleted')
-            return
+        if uid not in self._pending_events:
+            self._pending_events[uid] = []
+        _, root_path = self._handlers[uid]
         event_kind = cast(FileWatcherEventType, event_type)
-        handler_impl.on_file_event_async([(event_kind, path.join(root_path, cwd_relative_path))])
+        self._pending_events[uid].append((event_kind, path.join(root_path, cwd_relative_path)))
 
     def on_stderr_message(self, message: str) -> None:
         log('ERROR: {}'.format(message))

@@ -5,32 +5,7 @@ const readline = require('readline');
 const debounce = require('lodash.debounce');
 const chokidar = require('chokidar');
 
-/**
- * @typedef {'add' | 'addDir' | 'change' | 'unlink' | 'unlinkDir'} ChokidarEventType
- * @typedef {'create' | 'change' | 'delete'} LspEventType
- *
- * @typedef {{
- *   cwd: string
- *   debounceChanges: number
- *   debug: boolean
- *   events: LspEventType[]
- *   followSymlinks: boolean
- *   ignores: string[] | null
- *   initial: boolean
- *   patterns: string[]
- *   polling: boolean
- *   pollInterval: number
- *   pollIntervalBinary: number
- *   uid: number
- * }} RegisterWatcherOptions
- *
- * @typedef {{
- *   register?: RegisterWatcherOptions
- *   unregister?: RegisterWatcherOptions['uid']
- * }} InputCommand
- */
-
-/** @type {Record<ChokidarEventType, LspEventType | null>} */
+/** @type {Record<ChokidarCli.ChokidarEventType, ChokidarCli.LspEventType | null>} */
 const CHOKIDAR_EVENT_TYPE_TO_LSP = {
     add: 'create',
     addDir: null,
@@ -39,7 +14,7 @@ const CHOKIDAR_EVENT_TYPE_TO_LSP = {
     unlinkDir: null,
 };
 
-/** @type {Partial<RegisterWatcherOptions>} */
+/** @type {Partial<ChokidarCli.RegisterWatcherOptions>} */
 const defaultOpts = {
     debounceChanges: 400,
     debug: false,
@@ -77,7 +52,7 @@ function handleInput(line) {
         return;
     }
 
-    /** @type {InputCommand} */
+    /** @type {ChokidarCli.InputCommand} */
     let data;
 
     try {
@@ -113,7 +88,7 @@ function handleInput(line) {
     }
 }
 
-/** @param {RegisterWatcherOptions} opts */
+/** @param {ChokidarCli.RegisterWatcherOptions} opts */
 function registerWatcher(opts) {
     const chokidarOpts = createChokidarOpts(opts);
     const watcher = chokidar.watch(opts.patterns, chokidarOpts);
@@ -130,6 +105,7 @@ function registerWatcher(opts) {
     function reportDebouncedChanges() {
         if (debouncedChangesQueue.length) {
             console.log(debouncedChangesQueue.join('\n'));
+            console.log('<flush>');
             debouncedChangesQueue = [];
         }
     }
@@ -151,6 +127,7 @@ function registerWatcher(opts) {
             debouncedChangesRun();
         } else {
             console.log(eventString);
+            console.log('<flush>');
         }
     });
 
@@ -168,7 +145,7 @@ function registerWatcher(opts) {
 }
 
 /**
- * @param {RegisterWatcherOptions} opts
+ * @param {ChokidarCli.RegisterWatcherOptions} opts
  * @return {chokidar.WatchOptions}
  */
 function createChokidarOpts(opts) {
