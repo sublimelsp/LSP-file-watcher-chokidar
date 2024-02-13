@@ -231,6 +231,8 @@ class FileWatcherChokidar(TransportCallbacks):
         # using the `<flush>` line.
         if payload == '<flush>':
             for uid, events in self._pending_events.items():
+                if uid not in self._handlers:
+                    continue
                 handler, root_path = self._handlers[uid]
                 handler_impl = handler()
                 if not handler_impl:
@@ -246,6 +248,8 @@ class FileWatcherChokidar(TransportCallbacks):
         uid, event_type, cwd_relative_path = payload.split(':', 2)
         if uid not in self._pending_events:
             self._pending_events[uid] = []
+        if uid not in self._handlers:
+            return
         _, root_path = self._handlers[uid]
         event_kind = cast(FileWatcherEventType, event_type)
         self._pending_events[uid].append((event_kind, path.join(root_path, cwd_relative_path)))
