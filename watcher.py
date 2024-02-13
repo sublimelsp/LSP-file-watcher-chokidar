@@ -246,10 +246,10 @@ class FileWatcherChokidar(TransportCallbacks):
             return
         # Queue event.
         uid, event_type, cwd_relative_path = payload.split(':', 2)
-        if uid not in self._pending_events:
-            self._pending_events[uid] = []
         if uid not in self._handlers:
             return
+        if uid not in self._pending_events:
+            self._pending_events[uid] = []
         _, root_path = self._handlers[uid]
         event_kind = cast(FileWatcherEventType, event_type)
         self._pending_events[uid].append((event_kind, path.join(root_path, cwd_relative_path)))
