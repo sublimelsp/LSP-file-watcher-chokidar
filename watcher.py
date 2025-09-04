@@ -153,7 +153,8 @@ class FileWatcherChokidar(TransportCallbacks):
 
     def _on_watcher_removed(self, controller_id: int) -> None:
         # log('Removing watcher with id "{}"'.format(controller_id))
-        self._handlers.pop(str(controller_id))
+        if str(controller_id) in self._handlers:
+            self._handlers.pop(str(controller_id))
         if not self._transport:
             log('ERROR: Transport does not exist')
             return
@@ -230,6 +231,8 @@ class FileWatcherChokidar(TransportCallbacks):
         # using the `<flush>` line.
         if payload == '<flush>':
             for uid, events in self._pending_events.items():
+                if uid not in self._handlers:
+                    continue
                 handler, root_path = self._handlers[uid]
                 handler_impl = handler()
                 if not handler_impl:
@@ -243,6 +246,8 @@ class FileWatcherChokidar(TransportCallbacks):
             return
         # Queue event.
         uid, event_type, cwd_relative_path = payload.split(':', 2)
+        if uid not in self._handlers:
+            return
         if uid not in self._pending_events:
             self._pending_events[uid] = []
         _, root_path = self._handlers[uid]
