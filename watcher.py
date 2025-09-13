@@ -153,6 +153,7 @@ class FileWatcherChokidar(TransportCallbacks):
 
     def _on_watcher_removed(self, controller_id: int) -> None:
         # log('Removing watcher with id "{}"'.format(controller_id))
+        self._handlers.pop(str(controller_id))
         if not self._transport:
             log('ERROR: Transport does not exist')
             return
