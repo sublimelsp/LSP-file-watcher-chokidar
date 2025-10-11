@@ -12,7 +12,7 @@
   "devDependencies": {
     "@types/lodash.debounce": "4.0.9",
     "@types/lodash.throttle": "4.1.9",
-    "@types/node": "22.18.1",
+    "@types/node": "22.18.10",
     "eslint": "8.57.1",
     "typescript": "5.9.2"
   }
