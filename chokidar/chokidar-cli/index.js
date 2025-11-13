@@ -8,10 +8,10 @@ const chokidar = require('chokidar');
 /** @type {Record<ChokidarCli.ChokidarEventType, ChokidarCli.LspEventType | null>} */
 const CHOKIDAR_EVENT_TYPE_TO_LSP = {
     add: 'create',
-    addDir: null,
+    addDir: 'create',
     change: 'change',
     unlink: 'delete',
-    unlinkDir: null,
+    unlinkDir: 'delete',
 };
 
 /** @type {Partial<ChokidarCli.RegisterWatcherOptions>} */
@@ -117,6 +117,10 @@ function registerWatcher(opts) {
             if (opts.debug) {
                 console.error(`Unsupported event type "${event}".`);
             }
+            return;
+        }
+
+        if (!opts.events.includes(lspEvent)) {
             return;
         }
 
