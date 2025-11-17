@@ -240,11 +240,8 @@ class FileWatcherChokidar(EventCollector):
         handler: FileWatcherProtocol
     ) -> None:
         self._handlers[str(controller_id)] = (weakref.ref(handler), root_path)
-        if len(self._handlers) and not self._process_handler:
-            self._process_handler = ProcessHandler(self)
         if not self._process_handler:
-            log('ERROR: Failed creating watcher process')
-            return
+            self._process_handler = ProcessHandler(self)
         # log('Starting watcher for directory "{}". Pattern: {}. Ignores: {}'.format(root_path, patterns, ignores))
         register_data = {
             'register': {
