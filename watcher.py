@@ -215,6 +215,7 @@ class FileWatcherChokidar(EventCollector):
         self._last_controller_id = 0
         self._handlers: dict[str, tuple[weakref.ref[FileWatcherProtocol], str]] = {}
         self._process_handler: ProcessHandler | None = None
+
     def register_watcher(
         self,
         root_path: str,
