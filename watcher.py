@@ -158,7 +158,8 @@ class ProcessHandler(TransportCallbacks[str]):
         if self._transport:
             self._transport.close()
             self._transport = None
-            log(f'Watcher process ended. Exit code: {exit_code}, Exception: {exception}')
+            if exit_code != 0:
+                log(f'Watcher process ended. Exit code: {exit_code}, Exception: {exception}')
 
     # --- TransportCallbacks -------------------------------------------------------------------------------------------
 
