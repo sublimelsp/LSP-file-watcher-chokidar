@@ -1,3 +1,4 @@
+from __future__ import annotations
 from hashlib import md5
 from json import dumps
 from LSP.plugin import FileWatcher
@@ -10,7 +11,6 @@ from LSP.plugin.core.transports import ProcessTransport
 from LSP.plugin.core.transports import StopLoopError
 from LSP.plugin.core.transports import Transport
 from LSP.plugin.core.transports import TransportCallbacks
-from LSP.plugin.core.typing import Any, Callable, cast, Dict, IO, List, Optional, Tuple
 from lsp_utils import NodeRuntime
 from os import makedirs
 from os import path
@@ -18,14 +18,22 @@ from os import remove
 from shutil import rmtree
 from sublime_lib import ActivityIndicator
 from sublime_lib import ResourcePath
+from typing import TYPE_CHECKING, cast, Protocol
 import sublime
 import subprocess
 import weakref
 
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
+    from types import TracebackType
+    from typing import IO, Self
+
+
+PACKAGE_NAME = str(__package__)
 PACKAGE_STORAGE = path.abspath(path.join(sublime.cache_path(), "..", "Package Storage"))
-VIRTUAL_CHOKIDAR_PATH = 'Packages/{}/{}/'.format(__package__, 'chokidar')
-CHOKIDAR_PACKAGE_STORAGE = path.join(PACKAGE_STORAGE, __package__)
+VIRTUAL_CHOKIDAR_PATH = 'Packages/{}/{}/'.format(PACKAGE_NAME, 'chokidar')
+CHOKIDAR_PACKAGE_STORAGE = path.join(PACKAGE_STORAGE, PACKAGE_NAME)
 CHOKIDAR_INSTALATION_MARKER = path.join(CHOKIDAR_PACKAGE_STORAGE, '.installing')
 CHOKIDAR_CLI_PATH = path.join(CHOKIDAR_PACKAGE_STORAGE, 'chokidar', 'chokidar-cli', 'index.js')
 
@@ -33,16 +41,16 @@ Uid = str
 
 
 def log(message: str) -> None:
-    print('{}: {}'.format(__package__, message))
+    print(f'{PACKAGE_NAME}: {message}')
 
 
 class TemporaryInstallationMarker:
     """
-    Creates a temporary file for the duration of the context.
+    Create temporary file for the duration of the context.
+
     The temporary file is not removed if an exception triggeres within the context.
 
     Usage:
-
     ```
     with TemporaryInstallationMarker('/foo/file'):
         ...
@@ -52,123 +60,50 @@ class TemporaryInstallationMarker:
     def __init__(self, marker_path: str) -> None:
         self._marker_path = marker_path
 
-    def __enter__(self) -> 'TemporaryInstallationMarker':
+    def __enter__(self) -> Self:
         makedirs(path.dirname(self._marker_path), exist_ok=True)
         open(self._marker_path, 'a').close()
         return self
 
-    def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> None:
+    def __exit__(
+        self, exc_type: type[BaseException] | None, exc_value: BaseException | None, traceback: TracebackType | None
+    ) -> None:
         if exc_type:
             # Don't remove the marker on exception.
             return
         remove(self._marker_path)
 
 
+class EventCollector(Protocol):
+
+    def on_events(self, uid: Uid, events: list[FileWatcherEvent]) -> None:
+        ...
+
+
 class StringTransportHandler(AbstractProcessor[str]):
 
     def write_data(self, writer: IO[bytes], data: str) -> None:
-        writer.write('{}\n'.format(data).encode('utf-8'))
+        writer.write(f'{data}\n'.encode())
 
-    def read_data(self, reader: IO[bytes]) -> Optional[str]:
+    def read_data(self, reader: IO[bytes]) -> str | None:
         data = reader.readline()
         text = None
         try:
             text = data.decode('utf-8').strip()
         except Exception as ex:
-            log("decode error: {}".format(ex))
+            log(f"decode error: {ex}")
         if not text:
-            raise StopLoopError()
+            raise StopLoopError
         return text
 
 
-class FileWatcherController(FileWatcher):
-
-    @classmethod
-    def create(
-        cls,
-        root_path: str,
-        patterns: List[str],
-        events: List[FileWatcherEventType],
-        ignores: List[str],
-        handler: FileWatcherProtocol
-    ) -> 'FileWatcher':
-        return file_watcher.register_watcher(root_path, patterns, events, ignores, handler)
-
-    def __init__(self, on_destroy: Callable[[], None]) -> None:
-        self._on_destroy = on_destroy
-
-    def destroy(self) -> None:
-        self._on_destroy()
-
-
-class FileWatcherChokidar(TransportCallbacks):
-
-    def __init__(self) -> None:
-        self._last_controller_id = 0
-        self._handlers = {}  # type: Dict[str, Tuple[weakref.ref[FileWatcherProtocol], str]]
-        self._node_runtime = None  # type: Optional[NodeRuntime]
-        self._transport = None  # type: Optional[Transport[str]]
-        self._pending_events = {}  # type: Dict[Uid, List[FileWatcherEvent]]
-
-    def register_watcher(
-        self,
-        root_path: str,
-        patterns: List[str],
-        events: List[FileWatcherEventType],
-        ignores: List[str],
-        handler: FileWatcherProtocol
-    ) -> 'FileWatcherController':
-        self._last_controller_id += 1
-        controller_id = self._last_controller_id
-        controller = FileWatcherController(on_destroy=lambda: self._on_watcher_removed(controller_id))
-        self._on_watcher_added(controller_id, root_path, patterns, events, ignores, handler)
-        return controller
-
-    def _on_watcher_added(
-        self,
-        controller_id: int,
-        root_path: str,
-        patterns: List[str],
-        events: List[FileWatcherEventType],
-        ignores: List[str],
-        handler: FileWatcherProtocol
-    ) -> None:
-        self._handlers[str(controller_id)] = (weakref.ref(handler), root_path)
-        if len(self._handlers) and not self._transport:
-            self._start_process()
-        if not self._transport:
-            log('ERROR: Failed creating transport')
-            return
-        # log('Starting watcher for directory "{}". Pattern: {}. Ignores: {}'.format(root_path, patterns, ignores))
-        register_data = {
-            'register': {
-                'cwd': root_path,
-                'events': events,
-                'ignores': ignores,
-                'patterns': patterns,
-                'uid': controller_id,
-            }
-        }
-        self._transport.send(self._to_json(register_data))
-
-    def _on_watcher_removed(self, controller_id: int) -> None:
-        # log('Removing watcher with id "{}"'.format(controller_id))
-        self._handlers.pop(str(controller_id))
-        if not self._transport:
-            log('ERROR: Transport does not exist')
-            return
-        self._transport.send(self._to_json({'unregister': controller_id}))
-        if not len(self._handlers) and self._transport:
-            self._end_process()
-
-    def _to_json(self, obj: Any) -> str:
-        return dumps(
-            obj,
-            ensure_ascii=False,
-            sort_keys=False,
-            check_circular=False,
-            separators=(',', ':')
-        )
+class ProcessHandler(TransportCallbacks[str]):
+    def __init__(self, event_collector: EventCollector) -> None:
+        self._transport: Transport[str] | None = None
+        self._pending_events: dict[Uid, list[FileWatcherEvent]] = {}
+        self._event_collector = event_collector
+        self._node_runtime: NodeRuntime | None = None
+        self._start_process()
 
     def _start_process(self) -> None:
         # log('Starting watcher process')
@@ -187,9 +122,9 @@ class FileWatcherChokidar(TransportCallbacks):
     def _resolve_node_runtime(self) -> NodeRuntime:
         if self._node_runtime:
             return self._node_runtime
-        self._node_runtime = NodeRuntime.get(__package__, PACKAGE_STORAGE, (12, 0, 0))
+        self._node_runtime = NodeRuntime.get(PACKAGE_NAME, PACKAGE_STORAGE, (12, 0, 0))
         if not self._node_runtime:
-            raise Exception('{}: Failed to locate the Node.js Runtime'.format(__package__))
+            raise Exception(f'{PACKAGE_NAME}: Failed to locate the Node.js Runtime')
         return self._node_runtime
 
     def _initialize_storage(self, node_runtime: NodeRuntime) -> None:
@@ -215,11 +150,16 @@ class FileWatcherChokidar(TransportCallbacks):
                 with ActivityIndicator(sublime.active_window(), 'Installing file watcher'):
                     node_runtime.run_install(destination_dir)
 
-    def _end_process(self, exception: Optional[Exception] = None) -> None:
+    def send(self, payload: str) -> None:
+        if self._transport:
+            self._transport.send(payload)
+
+    def end_process(self, exit_code: int, exception: Exception | None = None) -> None:
         if self._transport:
             self._transport.close()
             self._transport = None
-            log('Watcher process ended. Exception: {}'.format(str(exception)))
+            if exit_code != 0:
+                log(f'Watcher process ended. Exit code: {exit_code}, Exception: {exception}')
 
     # --- TransportCallbacks -------------------------------------------------------------------------------------------
 
@@ -230,34 +170,122 @@ class FileWatcherChokidar(TransportCallbacks):
         # using the `<flush>` line.
         if payload == '<flush>':
             for uid, events in self._pending_events.items():
-                if uid not in self._handlers:
-                    continue
-                handler, root_path = self._handlers[uid]
-                handler_impl = handler()
-                if not handler_impl:
-                    log('ERROR: on_payload(): Handler already deleted')
-                    continue
-                handler_impl.on_file_event_async(events)
+                self._event_collector.on_events(uid, events)
             self._pending_events.clear()
             return
         if ':' not in payload:
-            log('Invalid watcher output: {}'.format(payload))
+            log(f'Invalid watcher output: {payload}')
             return
         # Queue event.
-        uid, event_type, cwd_relative_path = payload.split(':', 2)
-        if uid not in self._handlers:
-            return
+        uid, event_type, path = payload.split(':', 2)
         if uid not in self._pending_events:
             self._pending_events[uid] = []
-        _, root_path = self._handlers[uid]
-        event_kind = cast(FileWatcherEventType, event_type)
-        self._pending_events[uid].append((event_kind, path.join(root_path, cwd_relative_path)))
+        event_kind = cast('FileWatcherEventType', event_type)
+        self._pending_events[uid].append((event_kind, path))
 
     def on_stderr_message(self, message: str) -> None:
-        log('ERROR: {}'.format(message))
+        log(f'ERROR: {message}')
 
-    def on_transport_close(self, exit_code: int, exception: Optional[Exception]) -> None:
-        self._end_process(exception)
+    def on_transport_close(self, exit_code: int, exception: Exception | None) -> None:
+        self.end_process(exit_code, exception)
+
+
+class FileWatcherController(FileWatcher):
+
+    @classmethod
+    def create(
+        cls,
+        root_path: str,
+        patterns: list[str],
+        events: list[FileWatcherEventType],
+        ignores: list[str],
+        handler: FileWatcherProtocol
+    ) -> FileWatcher:
+        return file_watcher.register_watcher(root_path, patterns, events, ignores, handler)
+
+    def __init__(self, on_destroy: Callable[[], None]) -> None:
+        self._on_destroy = on_destroy
+
+    def destroy(self) -> None:
+        self._on_destroy()
+
+
+class FileWatcherChokidar(EventCollector):
+
+    def __init__(self) -> None:
+        self._last_controller_id = 0
+        self._handlers: dict[str, tuple[weakref.ref[FileWatcherProtocol], str]] = {}
+        self._process_handler: ProcessHandler | None = None
+
+    def register_watcher(
+        self,
+        root_path: str,
+        patterns: list[str],
+        events: list[FileWatcherEventType],
+        ignores: list[str],
+        handler: FileWatcherProtocol
+    ) -> FileWatcherController:
+        self._last_controller_id += 1
+        controller_id = self._last_controller_id
+        controller = FileWatcherController(on_destroy=lambda: self._on_watcher_removed(controller_id))
+        self._on_watcher_added(controller_id, root_path, patterns, events, ignores, handler)
+        return controller
+
+    def _on_watcher_added(
+        self,
+        controller_id: int,
+        root_path: str,
+        patterns: list[str],
+        events: list[FileWatcherEventType],
+        ignores: list[str],
+        handler: FileWatcherProtocol
+    ) -> None:
+        self._handlers[str(controller_id)] = (weakref.ref(handler), root_path)
+        if not self._process_handler:
+            self._process_handler = ProcessHandler(self)
+        # log('Starting watcher for directory "{}". Pattern: {}. Ignores: {}'.format(root_path, patterns, ignores))
+        register_data = {
+            'register': {
+                'cwd': root_path,
+                'events': events,
+                'ignores': ignores,
+                'patterns': patterns,
+                'uid': controller_id,
+            }
+        }
+        self._process_handler.send(self._to_json(register_data))
+
+    def _on_watcher_removed(self, controller_id: int) -> None:
+        # log('Removing watcher with id "{}"'.format(controller_id))
+        self._handlers.pop(str(controller_id))
+        if not self._process_handler:
+            log('ERROR: Watcher process does not exist')
+            return
+        self._process_handler.send(self._to_json({'unregister': controller_id}))
+        if not len(self._handlers) and self._process_handler:
+            self._process_handler.end_process(0)
+            self._process_handler = None
+
+    def _to_json(self, obj: object) -> str:
+        return dumps(
+            obj,
+            ensure_ascii=False,
+            sort_keys=False,
+            check_circular=False,
+            separators=(',', ':')
+        )
+
+    # --- EventCollector -----------------------------------------------------------------------------------------------
+
+    def on_events(self, uid: Uid, events: list[FileWatcherEvent]) -> None:
+        if uid not in self._handlers:
+            return
+        handler, root_path = self._handlers[uid]
+        handler_impl = handler()
+        if not handler_impl:
+            log('ERROR: on_payload(): Handler already deleted')
+            return
+        handler_impl.on_file_event_async([(e_type, path.join(root_path, e_path)) for (e_type, e_path) in events])
 
 
 file_watcher = FileWatcherChokidar()
