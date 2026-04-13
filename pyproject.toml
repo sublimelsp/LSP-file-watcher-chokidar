@@ -1,0 +1,51 @@
+[tool.pyright]
+pythonVersion = "3.8"
+typeCheckingMode = "standard"
+
+[tool.ruff]
+line-length = 120
+target-version = "py38"
+
+[tool.ruff.format]
+quote-style = "preserve"
+indent-style = "space"
+# Respect magic trailing commas.
+skip-magic-trailing-comma = false
+# Automatically detect the appropriate line ending.
+line-ending = "auto"
+
+[tool.ruff.lint]
+preview = true
+fixable = ["ALL"]
+select = [
+    "F401",
+    "I",
+    "PTH",
+    "PYI",
+    "SIM",
+    "RET",
+    "RUF",
+    "RSE",
+    "TC",
+    "UP",
+]
+
+[tool.ruff.lint.isort]
+case-sensitive = false
+force-single-line = true
+from-first = true
+no-sections = true
+order-by-type = false
+required-imports = ["from __future__ import annotations"]
+
+[tool.tox]
+env_list = ["py3"]
+skipsdist = true
+
+[tool.tox.env_run_base]
+deps = [
+    "ruff==0.15.10",
+]
+commands = [
+    ["ruff", "check"],
+]
