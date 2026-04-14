@@ -1,4 +1,10 @@
 from __future__ import annotations
+
+from .transports import AbstractProcessor
+from .transports import ProcessTransport
+from .transports import StopLoopError
+from .transports import Transport
+from .transports import TransportCallbacks
 from hashlib import md5
 from json import dumps
 from LSP.plugin import FileWatcher
@@ -6,36 +12,33 @@ from LSP.plugin import FileWatcherEvent
 from LSP.plugin import FileWatcherEventType
 from LSP.plugin import FileWatcherProtocol
 from LSP.plugin import register_file_watcher_implementation
-from LSP.plugin.core.transports import AbstractProcessor
-from LSP.plugin.core.transports import ProcessTransport
-from LSP.plugin.core.transports import StopLoopError
-from LSP.plugin.core.transports import Transport
-from LSP.plugin.core.transports import TransportCallbacks
 from lsp_utils import NodeRuntime
-from os import makedirs
-from os import path
-from os import remove
+from pathlib import Path
 from shutil import rmtree
 from sublime_lib import ActivityIndicator
 from sublime_lib import ResourcePath
-from typing import TYPE_CHECKING, cast, Protocol
+from typing import cast
+from typing import final
+from typing import Protocol
+from typing import TYPE_CHECKING
+from typing_extensions import override
+from typing_extensions import Self
 import sublime
 import subprocess
 import weakref
 
-
 if TYPE_CHECKING:
     from collections.abc import Callable
     from types import TracebackType
-    from typing import IO, Self
+    from typing import IO
 
 
 PACKAGE_NAME = str(__package__)
-PACKAGE_STORAGE = path.abspath(path.join(sublime.cache_path(), "..", "Package Storage"))
-VIRTUAL_CHOKIDAR_PATH = 'Packages/{}/{}/'.format(PACKAGE_NAME, 'chokidar')
-CHOKIDAR_PACKAGE_STORAGE = path.join(PACKAGE_STORAGE, PACKAGE_NAME)
-CHOKIDAR_INSTALATION_MARKER = path.join(CHOKIDAR_PACKAGE_STORAGE, '.installing')
-CHOKIDAR_CLI_PATH = path.join(CHOKIDAR_PACKAGE_STORAGE, 'chokidar', 'chokidar-cli', 'index.js')
+PACKAGE_STORAGE = Path(sublime.cache_path(), "..", "Package Storage").absolute()
+VIRTUAL_CHOKIDAR_PATH = f'Packages/{PACKAGE_NAME}/chokidar/'
+CHOKIDAR_PACKAGE_STORAGE = Path(PACKAGE_STORAGE, PACKAGE_NAME)
+CHOKIDAR_INSTALATION_MARKER = Path(CHOKIDAR_PACKAGE_STORAGE, '.installing')
+CHOKIDAR_CLI_PATH = Path(CHOKIDAR_PACKAGE_STORAGE, 'chokidar', 'chokidar-cli', 'index.js')
 
 Uid = str
 
@@ -44,6 +47,7 @@ def log(message: str) -> None:
     print(f'{PACKAGE_NAME}: {message}')
 
 
+@final
 class TemporaryInstallationMarker:
     """
     Create temporary file for the duration of the context.
@@ -57,12 +61,12 @@ class TemporaryInstallationMarker:
     ```
     """
 
-    def __init__(self, marker_path: str) -> None:
+    def __init__(self, marker_path: Path) -> None:
         self._marker_path = marker_path
 
     def __enter__(self) -> Self:
-        makedirs(path.dirname(self._marker_path), exist_ok=True)
-        open(self._marker_path, 'a').close()
+        self._marker_path.parent.mkdir(exist_ok=True, parents=True)
+        self._marker_path.open('a', encoding='utf-8').close()
         return self
 
     def __exit__(
@@ -71,7 +75,7 @@ class TemporaryInstallationMarker:
         if exc_type:
             # Don't remove the marker on exception.
             return
-        remove(self._marker_path)
+        self._marker_path.unlink()
 
 
 class EventCollector(Protocol):
@@ -82,9 +86,11 @@ class EventCollector(Protocol):
 
 class StringTransportHandler(AbstractProcessor[str]):
 
+    @override
     def write_data(self, writer: IO[bytes], data: str) -> None:
         writer.write(f'{data}\n'.encode())
 
+    @override
     def read_data(self, reader: IO[bytes]) -> str | None:
         data = reader.readline()
         text = None
@@ -97,6 +103,7 @@ class StringTransportHandler(AbstractProcessor[str]):
         return text
 
 
+@final
 class ProcessHandler(TransportCallbacks[str]):
     def __init__(self, event_collector: EventCollector) -> None:
         self._transport: Transport[str] | None = None
@@ -113,7 +120,7 @@ class ProcessHandler(TransportCallbacks[str]):
             raise Exception('Node binary not resolved')
         self._initialize_storage(node_runtime)
         process = node_runtime.run_node(
-            [CHOKIDAR_CLI_PATH], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            [str(CHOKIDAR_CLI_PATH)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if not process or not process.stdin or not process.stdout:
             raise RuntimeError('Failed initializing watcher process')
         self._transport = ProcessTransport(
@@ -122,21 +129,20 @@ class ProcessHandler(TransportCallbacks[str]):
     def _resolve_node_runtime(self) -> NodeRuntime:
         if self._node_runtime:
             return self._node_runtime
-        self._node_runtime = NodeRuntime.get(PACKAGE_NAME, PACKAGE_STORAGE, (12, 0, 0))
+        self._node_runtime = NodeRuntime.get(PACKAGE_NAME, str(PACKAGE_STORAGE), (12, 0, 0))
         if not self._node_runtime:
             raise Exception(f'{PACKAGE_NAME}: Failed to locate the Node.js Runtime')
         return self._node_runtime
 
     def _initialize_storage(self, node_runtime: NodeRuntime) -> None:
-        destination_dir = path.join(CHOKIDAR_PACKAGE_STORAGE, 'chokidar')
+        destination_dir = (CHOKIDAR_PACKAGE_STORAGE / 'chokidar')
         installed = False
-        if path.isdir(path.join(destination_dir, 'node_modules')):
+        if (destination_dir / 'node_modules').is_dir():
             # Dependencies already installed. Check if the version has changed or last installation did not complete.
             try:
                 src_hash = md5(ResourcePath(VIRTUAL_CHOKIDAR_PATH, 'package.json').read_bytes()).hexdigest()
-                with open(path.join(destination_dir, 'package.json'), 'rb') as file:
-                    dst_hash = md5(file.read()).hexdigest()
-                if src_hash == dst_hash and not path.isfile(CHOKIDAR_INSTALATION_MARKER):
+                dst_hash = md5(Path(destination_dir, 'package.json').read_bytes()).hexdigest()
+                if src_hash == dst_hash and not CHOKIDAR_INSTALATION_MARKER.is_file():
                     installed = True
             except FileNotFoundError:
                 # Needs to be re-installed.
@@ -144,7 +150,7 @@ class ProcessHandler(TransportCallbacks[str]):
 
         if not installed:
             with TemporaryInstallationMarker(CHOKIDAR_INSTALATION_MARKER):
-                if path.isdir(destination_dir):
+                if destination_dir.is_dir():
                     rmtree(destination_dir)
                 ResourcePath(VIRTUAL_CHOKIDAR_PATH).copytree(destination_dir, exist_ok=True)
                 with ActivityIndicator(sublime.active_window(), 'Installing file watcher'):
@@ -163,6 +169,7 @@ class ProcessHandler(TransportCallbacks[str]):
 
     # --- TransportCallbacks -------------------------------------------------------------------------------------------
 
+    @override
     def on_payload(self, payload: str) -> None:
         # Chokidar debounces the events and sends them in batches but Transport notifies us for each new line
         # separately so we don't get the benefit of batching by default. To optimize the `on_file_event_async`
@@ -183,16 +190,20 @@ class ProcessHandler(TransportCallbacks[str]):
         event_kind = cast('FileWatcherEventType', event_type)
         self._pending_events[uid].append((event_kind, path))
 
+    @override
     def on_stderr_message(self, message: str) -> None:
         log(f'ERROR: {message}')
 
+    @override
     def on_transport_close(self, exit_code: int, exception: Exception | None) -> None:
         self.end_process(exit_code, exception)
 
 
+@final
 class FileWatcherController(FileWatcher):
 
     @classmethod
+    @override
     def create(
         cls,
         root_path: str,
@@ -206,10 +217,12 @@ class FileWatcherController(FileWatcher):
     def __init__(self, on_destroy: Callable[[], None]) -> None:
         self._on_destroy = on_destroy
 
+    @override
     def destroy(self) -> None:
         self._on_destroy()
 
 
+@final
 class FileWatcherChokidar(EventCollector):
 
     def __init__(self) -> None:
@@ -277,6 +290,7 @@ class FileWatcherChokidar(EventCollector):
 
     # --- EventCollector -----------------------------------------------------------------------------------------------
 
+    @override
     def on_events(self, uid: Uid, events: list[FileWatcherEvent]) -> None:
         if uid not in self._handlers:
             return
@@ -285,7 +299,7 @@ class FileWatcherChokidar(EventCollector):
         if not handler_impl:
             log('ERROR: on_payload(): Handler already deleted')
             return
-        handler_impl.on_file_event_async([(e_type, path.join(root_path, e_path)) for (e_type, e_path) in events])
+        handler_impl.on_file_event_async([(e_type, str(Path(root_path, e_path))) for (e_type, e_path) in events])
 
 
 file_watcher = FileWatcherChokidar()
