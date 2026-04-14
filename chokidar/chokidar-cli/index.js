@@ -57,7 +57,7 @@ function handleInput(line) {
 
     try {
         data = JSON.parse(line);
-    } catch (error) {
+    } catch {
         console.error(`Failed parsing input: "${line}"`);
         return;
     }
@@ -180,7 +180,7 @@ if (Number.isInteger(parentProcessPid)) {
     setInterval(() => {
         try {
             process.kill(parentProcessPid, 0);
-        } catch (ex) {
+        } catch {
             // Parent process doesn't exist anymore. Exit the server.
             if (rl) {
                 rl.close();
