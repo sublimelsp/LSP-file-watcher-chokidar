@@ -5,17 +5,16 @@ from .transports import ProcessTransport
 from .transports import StopLoopError
 from .transports import Transport
 from .transports import TransportCallbacks
-from hashlib import md5
 from json import dumps
 from LSP.plugin import FileWatcher
 from LSP.plugin import FileWatcherEvent
 from LSP.plugin import FileWatcherEventType
 from LSP.plugin import FileWatcherProtocol
 from LSP.plugin import register_file_watcher_implementation
-from lsp_utils import NodeRuntime
+from LSP.plugin import ST_STORAGE_PATH
+from lsp_utils import NodeManager
+from lsp_utils import NodeRunner
 from pathlib import Path
-from shutil import rmtree
-from sublime_lib import ActivityIndicator
 from sublime_lib import ResourcePath
 from typing import cast
 from typing import final
@@ -23,7 +22,6 @@ from typing import Protocol
 from typing import TYPE_CHECKING
 from typing_extensions import override
 from typing_extensions import Self
-import sublime
 import subprocess
 import weakref
 
@@ -34,10 +32,7 @@ if TYPE_CHECKING:
 
 
 PACKAGE_NAME = str(__package__)
-PACKAGE_STORAGE = Path(sublime.cache_path(), "..", "Package Storage").absolute()
-VIRTUAL_CHOKIDAR_PATH = f'Packages/{PACKAGE_NAME}/chokidar/'
-CHOKIDAR_PACKAGE_STORAGE = Path(PACKAGE_STORAGE, PACKAGE_NAME)
-CHOKIDAR_INSTALATION_MARKER = Path(CHOKIDAR_PACKAGE_STORAGE, '.installing')
+CHOKIDAR_PACKAGE_STORAGE = Path(ST_STORAGE_PATH, PACKAGE_NAME)
 CHOKIDAR_CLI_PATH = Path(CHOKIDAR_PACKAGE_STORAGE, 'chokidar', 'chokidar-cli', 'index.js')
 
 Uid = str
@@ -109,52 +104,27 @@ class ProcessHandler(TransportCallbacks[str]):
         self._transport: Transport[str] | None = None
         self._pending_events: dict[Uid, list[FileWatcherEvent]] = {}
         self._event_collector = event_collector
-        self._node_runtime: NodeRuntime | None = None
+        self._node_runner: NodeRunner | None = None
         self._start_process()
 
     def _start_process(self) -> None:
         # log('Starting watcher process')
         node_runtime = self._resolve_node_runtime()
-        node_bin = node_runtime.node_bin()
-        if not node_bin:
-            raise Exception('Node binary not resolved')
-        self._initialize_storage(node_runtime)
+        source_resource_path = ResourcePath('Packages', PACKAGE_NAME, 'chokidar')
+        destination_dir_path = CHOKIDAR_PACKAGE_STORAGE / 'chokidar'
+        node_runtime.install_project_dependencies(source_resource_path, destination_dir_path)
         process = node_runtime.run_node(
-            [str(CHOKIDAR_CLI_PATH)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            [CHOKIDAR_CLI_PATH], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if not process or not process.stdin or not process.stdout:
             raise RuntimeError('Failed initializing watcher process')
         self._transport = ProcessTransport(
             'lspwatcher', process, None, process.stdout, process.stdin, process.stderr, StringTransportHandler(), self)
 
-    def _resolve_node_runtime(self) -> NodeRuntime:
-        if self._node_runtime:
-            return self._node_runtime
-        self._node_runtime = NodeRuntime.get(PACKAGE_NAME, str(PACKAGE_STORAGE), (12, 0, 0))
-        if not self._node_runtime:
-            raise Exception(f'{PACKAGE_NAME}: Failed to locate the Node.js Runtime')
-        return self._node_runtime
-
-    def _initialize_storage(self, node_runtime: NodeRuntime) -> None:
-        destination_dir = (CHOKIDAR_PACKAGE_STORAGE / 'chokidar')
-        installed = False
-        if (destination_dir / 'node_modules').is_dir():
-            # Dependencies already installed. Check if the version has changed or last installation did not complete.
-            try:
-                src_hash = md5(ResourcePath(VIRTUAL_CHOKIDAR_PATH, 'package.json').read_bytes()).hexdigest()
-                dst_hash = md5(Path(destination_dir, 'package.json').read_bytes()).hexdigest()
-                if src_hash == dst_hash and not CHOKIDAR_INSTALATION_MARKER.is_file():
-                    installed = True
-            except FileNotFoundError:
-                # Needs to be re-installed.
-                pass
-
-        if not installed:
-            with TemporaryInstallationMarker(CHOKIDAR_INSTALATION_MARKER):
-                if destination_dir.is_dir():
-                    rmtree(destination_dir)
-                ResourcePath(VIRTUAL_CHOKIDAR_PATH).copytree(destination_dir, exist_ok=True)
-                with ActivityIndicator(sublime.active_window(), 'Installing file watcher'):
-                    node_runtime.run_install(destination_dir)
+    def _resolve_node_runtime(self) -> NodeRunner:
+        if self._node_runner:
+            return self._node_runner
+        self._node_runner = NodeManager.resolve(PACKAGE_NAME, required_node_version='>=12')
+        return self._node_runner
 
     def send(self, payload: str) -> None:
         if self._transport:
