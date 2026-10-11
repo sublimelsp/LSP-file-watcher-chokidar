@@ -10,14 +10,14 @@
     "lodash.throttle": "4.1.1"
   },
   "devDependencies": {
-    "@eslint/eslintrc": "^3.3.5",
+    "@eslint/eslintrc": "^3.3.7",
     "@eslint/js": "^10.0.1",
     "@types/lodash.debounce": "4.0.9",
     "@types/lodash.throttle": "4.1.9",
-    "@types/node": "^25.6.0",
-    "eslint": "^10.2.0",
-    "globals": "^17.5.0",
+    "@types/node": "^25.9.9",
+    "eslint": "^10.12.0",
+    "globals": "^17.13.0",
     "typescript": "6.0.3",
-    "typescript-eslint": "^8.58.2"
+    "typescript-eslint": "^8.71.1"
   }
 }
