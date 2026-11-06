@@ -24,6 +24,7 @@ T = TypeVar('T')
 T_contra = TypeVar('T_contra', contravariant=True)
 
 TCP_CONNECT_TIMEOUT = 5  # seconds
+PACKAGE_NAME = __name__.split('.')[0]
 
 
 class StopLoopError(Exception):
@@ -100,7 +101,7 @@ class ProcessTransport(Transport[T]):
             return
         t.join(2)
         if t.is_alive():
-            print(f"failed to join {t.name} thread")
+            print(f"{PACKAGE_NAME}: failed to join {t.name} thread")
 
     def __del__(self) -> None:
         self.close()
@@ -193,6 +194,6 @@ class ProcessTransport(Transport[T]):
         except (BrokenPipeError, AttributeError):
             pass
         except Exception:
-            print('unexpected exception type in stderr loop')
+            print(f'{PACKAGE_NAME}: unexpected exception type in stderr loop')
             traceback.print_exc()
         self._send_queue.put_nowait(None)
