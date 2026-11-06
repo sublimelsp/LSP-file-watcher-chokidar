@@ -39,7 +39,7 @@ Uid = str
 
 
 def log(message: str) -> None:
-    print(f'{PACKAGE_NAME}: {message}')
+    print(f'[{PACKAGE_NAME}] {message}')
 
 
 @final
