@@ -101,7 +101,7 @@ class ProcessTransport(Transport[T]):
             return
         t.join(2)
         if t.is_alive():
-            print(f"{PACKAGE_NAME}: failed to join {t.name} thread")
+            print(f"[{PACKAGE_NAME}] failed to join {t.name} thread")
 
     def __del__(self) -> None:
         self.close()
@@ -194,6 +194,6 @@ class ProcessTransport(Transport[T]):
         except (BrokenPipeError, AttributeError):
             pass
         except Exception:
-            print(f'{PACKAGE_NAME}: unexpected exception type in stderr loop')
+            print(f'[{PACKAGE_NAME}] unexpected exception type in stderr loop')
             traceback.print_exc()
         self._send_queue.put_nowait(None)
