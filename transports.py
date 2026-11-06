@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from functools import partial
-from LSP.plugin.core.logging import exception_log
 from queue import Queue
 from typing import final
 from typing import Generic
@@ -14,6 +13,7 @@ import contextlib
 import sublime
 import subprocess
 import threading
+import traceback
 import weakref
 
 if TYPE_CHECKING:
@@ -24,6 +24,7 @@ T = TypeVar('T')
 T_contra = TypeVar('T_contra', contravariant=True)
 
 TCP_CONNECT_TIMEOUT = 5  # seconds
+PACKAGE_NAME = __name__.split('.')[0]
 
 
 class StopLoopError(Exception):
@@ -98,10 +99,9 @@ class ProcessTransport(Transport[T]):
     def _join_thread(self, t: threading.Thread) -> None:
         if t.ident == threading.current_thread().ident:
             return
-        try:
-            t.join(2)
-        except TimeoutError as ex:
-            exception_log(f"failed to join {t.name} thread", ex)
+        t.join(2)
+        if t.is_alive():
+            print(f"[{PACKAGE_NAME}] failed to join {t.name} thread")
 
     def __del__(self) -> None:
         self.close()
@@ -193,6 +193,7 @@ class ProcessTransport(Transport[T]):
                     break
         except (BrokenPipeError, AttributeError):
             pass
-        except Exception as ex:
-            exception_log('unexpected exception type in stderr loop', ex)
+        except Exception:
+            print(f'[{PACKAGE_NAME}] unexpected exception type in stderr loop')
+            traceback.print_exc()
         self._send_queue.put_nowait(None)
